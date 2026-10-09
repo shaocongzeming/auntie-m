@@ -1,0 +1,52 @@
+{
+  "type": "zecrew-employee-bundle",
+  "bundleVersion": 1,
+  "name": "麦麦阿姨 (Auntie M) · 麦当劳后勤数字员工套装",
+  "provider": "北京韶聪泽明智能科技有限责任公司",
+  "description": "一位数字员工 + 一项工作技能 + 一条连接器需求的整体安装包。将本目录（或 zip）交给 Zecrew（班底），说『安装这个数字员工』，Zecrew 按本清单自动落位：员工入员工库、技能入技能库并绑定，然后引导用户完成连接器授权。",
+  "employee": {
+    "manifest": "zecrew/employee-manifest.json",
+    "installTo": "employees/mine/mcd-auntie/"
+  },
+  "skills": [
+    {
+      "id": "mcd-auntie",
+      "root": ".",
+      "installTo": "skills/mine/mcd-auntie/"
+    }
+  ],
+  "connectors": [
+    {
+      "id": "mcd-mcp",
+      "required": true,
+      "type": "streamablehttp",
+      "url": "https://mcp.mcd.cn",
+      "auth": "bearer-token",
+      "tokenApplyUrl": "https://open.mcd.cn/mcp",
+      "authGuide": "打开 open.mcd.cn/mcp → 手机号登录 → 控制台 → 激活，复制 MCP Token 粘贴到此处",
+      "exampleConfig": "mcp-config.example.json"
+    }
+  ],
+  "postInstall": [
+    "提示用户完成 mcd-mcp 连接器授权（Token 申请指引见 authGuide）",
+    "召唤麦麦阿姨，对她说『阿姨，来啦』完成首次对话；首次服务会自动执行上岗建档"
+  ],
+  "installOrder": [
+    {
+      "step": "skills",
+      "note": "先装技能——员工包声明了对技能的依赖，依赖先就位"
+    },
+    {
+      "step": "employee",
+      "note": "再装员工——其 capabilities.skills 即刻可解析绑定"
+    },
+    {
+      "step": "connectors-auth",
+      "note": "检查连接器授权状态，未授权则弹授权卡（含 Token 申请引导）"
+    },
+    {
+      "step": "postInstall",
+      "note": "完成提示与首次召唤引导"
+    }
+  ]
+}

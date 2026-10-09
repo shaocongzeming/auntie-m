@@ -1,0 +1,8 @@
+{
+  "id": "mcd-auntie",
+  "version": "1.0.0",
+  "name": "mcd-auntie",
+  "description": "点餐·麦当劳——麦麦阿姨（Auntie M）的工作技能：上岗建档（用户画像）、盘家底、薅羊毛、点餐（堂食/外带/外送）、算积分、主动关怀。基于麦当劳官方 MCP，数据实时查询，画像跟人走。",
+  "scripts": ["scripts/mcd_mcp.py"],
+  "externalEffect": true
+}
