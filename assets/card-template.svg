@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
+  <rect width="750" height="1334" fill="#d52b1e"/>
+  <text x="375" y="110" font-size="46" fill="#fdc82f" text-anchor="middle" font-weight="bold" letter-spacing="10">麦麦人格报告</text>
+  <text x="375" y="154" font-size="22" fill="#FFD9B3" text-anchor="middle" letter-spacing="3">{{PERIOD_LABEL}} · 麦麦人格鉴定书 · Auntie M</text>
+
+  <g transform="translate(238,205) scale(0.725)">
+    <g transform="matrix(1.25,0,0,-1.25,-54.676498,382.42034)">
+      <path d="m 195.96681,182.84873 c 4.89851,36.22162 21.04635,101.55081 51.84302,101.55081 35.95328,0 78.19715,-120.77081 78.18691,-220.756855 l -33.15518,0 c 0,104.870215 -25.68677,199.361455 -44.16936,199.365555 -19.28002,0.002 -36.17675,-64.27427 -36.17675,-186.734386 l -33.11033,0 c 0,122.460116 -16.79431,186.734386 -36.17717,186.734386 -18.44899,0 -44.117119,-94.51296 -44.117119,-199.365555 l -33.154977,0 c 0.03113,100.072485 42.167876,220.769145 78.185886,220.756855 30.75386,-0.0102 46.90723,-65.321 51.84507,-101.55081" fill="#fdc82f"/>
+    </g>
+  </g>
+
+  <text x="375" y="552" font-size="74" fill="#FFFFFF" text-anchor="middle" font-weight="bold">{{SCHOOL}}</text>
+  <text x="375" y="624" font-size="36" fill="#fdc82f" text-anchor="middle">{{PERIOD}} · {{STYLE}}</text>
+
+  {{TAGS_SVG}}
+
+  <rect x="64" y="826" width="622" height="356" rx="28" fill="#FFFFFF"/>
+  <text x="110" y="882" font-size="27" fill="#d52b1e" font-weight="bold">🍟 我的麦麦档案<tspan fill="#8B6B4A" font-weight="normal"> · 麦龄 {{TENURE}}</tspan></text>
+  <line x1="110" y1="918" x2="640" y2="918" stroke="#FFE3B3" stroke-width="2"/>
+  <g font-size="30" fill="#3A2418">
+    <text x="110" y="972">🍔 麦生累计吃了 <tspan fill="#d52b1e">{{N}}</tspan> 顿麦当劳</text>
+    <text x="110" y="1024">{{SLOT_EMOJI}} 典型出没： <tspan fill="#d52b1e">{{SLOT}}</tspan><tspan dx="6">时段</tspan></text>
+    <text x="110" y="1076">⭐ <tspan fill="#d52b1e">{{DISH}} × {{DISH_COUNT}}</tspan>{{CERT}}</text>
+    <text x="110" y="1128">🥤 常点 <tspan fill="#d52b1e">{{DRINK_NAME}} ×{{DRINK_TOP}}</tspan><tspan dx="6">· {{DRINK_PARTY}}</tspan></text>
+  </g>
+  <text x="375" y="1162" font-size="19" fill="#A08568" text-anchor="middle">数据源自麦当劳官方 MCP · 统计近一年内官方渠道订单</text>
+
+  <rect x="105" y="1218" width="540" height="74" rx="37" fill="#fdc82f"/>
+  <text x="375" y="1266" font-size="30" fill="#7A1E12" text-anchor="middle" font-weight="bold">你是什么派？测一测 →</text>
+  <text x="375" y="1322" font-size="24" fill="#1A1A1A" text-anchor="middle" font-weight="bold">github.com/shaocongzeming/auntie-m · 麦麦阿姨 skill 出品</text>
+</svg>
