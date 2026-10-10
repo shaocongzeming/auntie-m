@@ -26,7 +26,11 @@
 
 Skill 写的是方法不是能力清单：工具以当次 `tools/list` 为准按语义匹配；服务池出新能力按职责自然接入；用户的新需求看服务池说话——**上层不依赖下层的具体实现**。
 
-## 一键安装（WorkBuddy 用户）
+## 安装方式一：Zecrew（班底）一键雇佣（推荐）
+
+麦麦阿姨的原生家园是 [班底 Zecrew](https://zecrew.shaocongzeming.com)（韶聪泽明出品的 AI 办公助手）。把仓库整体（zip 或目录）交给 Zecrew，说一句"安装这个数字员工"——Zecrew 按根目录 `bundle.json` 自动完成技能入库、员工入库、依赖绑定，然后引导授权麦当劳 MCP。一个动作，阿姨上岗，画像存进 Zecrew 记忆体系。详见 [README 快速开始](./README.md#-zecrew班底用户--一键雇佣)。
+
+## 安装方式二：WorkBuddy 用户
 
 **第一步：配连接器**——左侧边栏【专家·技能·连接器】→【连接器】→ 右上角【自定义连接器】→【配置 MCP】，粘贴下面 JSON（**把 YOUR_MCP_TOKEN 换成你在 [open.mcd.cn/mcp](https://open.mcd.cn/mcp) 申请的 Token**），保存后在【自定义连接器】里把 mcd-mcp 【启用】：
 

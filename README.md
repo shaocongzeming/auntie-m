@@ -1,5 +1,12 @@
 # 👩‍🍳 麦麦阿姨 · 你的麦当劳后勤数字员工
 
+<p align="center">
+  <a href="https://github.com/shaocongzeming/auntie-m">
+    <img src="assets/hero-persona-card.png" width="300" alt="麦麦人格报告示例——牛肉派·夜麦星人·随心配精算师">
+  </a>
+</p>
+<p align="center"><i>▲ 一句话生成的「麦麦人格报告」——她的真实用户画像长这样（数据实时来自麦当劳官方 MCP）</i></p>
+
 > 麦麦阿姨是**「班底 Zecrew」**（[北京韶聪泽明智能科技有限责任公司](https://zecrew.shaocongzeming.com)出品的 AI 助手软件）生态里的一位**数字员工**：麦当劳前台粉红衣天使姐姐的专业 + 每天安排你用餐的阿姨的懂你。本作品使用 WorkBuddy 开发，基于麦当劳官方 MCP（一切查询与操作以 MCP 官方能力为准，不编不造）——她管你的吃饭大事：盘家底、薅羊毛、点餐、算积分，越来越懂你。麦当劳程序员节创意开发大赛参赛作品，非麦当劳官方产品。
 
 ## 她的成长档案：一位数字员工在班底 Zecrew 里的一生
@@ -47,7 +54,15 @@ Skill 写的是**方法，不是能力清单**：工具以当次 `tools/list` �
 
 前往 [open.mcd.cn/mcp](https://open.mcd.cn/mcp)，手机号登录 → 控制台 → 激活，复制 Token（1 分钟）。
 
-### WorkBuddy 用户（推荐）
+### [Zecrew（班底）](https://zecrew.shaocongzeming.com)用户——一键雇佣
+
+> [班底 Zecrew](https://zecrew.shaocongzeming.com)：韶聪泽明出品的 AI 办公助手，麦麦阿姨的原生家园。
+
+**把本仓库整体（zip 或目录）交给 Zecrew，说一句"安装这个数字员工"**——Zecrew 读根目录 [`bundle.json`](./bundle.json)（固定入口，installOrder 声明顺序）：①技能入库 → ②员工入库并绑定依赖 → ③弹麦当劳 MCP 授权卡（按引导填 Token）→ ④完成。一个动作，阿姨上岗，画像存进 Zecrew 记忆体系、跟人走。
+
+> 手动三步（版本暂不支持 bundle 时）：技能页导入仓库目录（skill.json + SKILL.md + scripts/）→ 员工页导入 [`zecrew/employee-manifest.json`](./zecrew/employee-manifest.json) → 连接器配置下面的 JSON。
+
+### WorkBuddy 用户（参赛推荐）
 
 1. 左侧边栏【专家·技能·连接器】→【连接器】→ 右上角【自定义连接器】→【配置MCP】，粘贴下面的 JSON（替换 Token 后保存并启用）：
 
