@@ -3,7 +3,7 @@ name: mcd-auntie
 description: |
   麦麦阿姨（Auntie M）——班底 Zecrew 数字员工的工作技能包：点餐·麦当劳。
   管用户的麦当劳吃饭大事：上岗建档（读历史订单形成用户画像与消费习惯）、盘家底（积分/优惠券/奖品）、薅羊毛（活动/领券）、点餐（到店点餐堂食或外带自取、麦乐送外送；"老样子"快路径 + 不知道吃什么时的筛选式贴合推荐）、主动关怀（定时问餐、券到期提醒）、算积分（兑换排行/抽奖期望）。
-  触发词：麦麦体检、盘家底、我的麦当劳积分、券要过期了吗、有什么羊毛、麦当劳省钱、帮我领券、老样子、想吃什么/不知道吃什么、积分换什么值。
+  触发词：麦麦体检、盘家底、我的麦当劳积分、券要过期了吗、有什么羊毛、麦当劳省钱、帮我领券、老样子、想吃什么/不知道吃什么、积分换什么值、出报告/我的人格/麦麦人格报告。
   安全约束：所有动用真实资产的操作（领券/下单/抽奖/兑换）必须先向用户展示方案并获确认后才执行。
 description_en: |
   Auntie M (the M is the Golden Arches) — a digital-employee skill of Zecrew for McDonald's. Builds a user profile from order history (habits, store, price band, remarks), manages assets (points/coupons), deal radar (campaigns/coupon claiming), meal ordering (dine-in & McDelivery, "the usual" fast path + funnel-style personalized recommendation), proactive care (scheduled meal check-ins, expiring-coupon alerts), and points advisory. Triggers (Chinese): 麦麦体检 / 盘家底 / 老样子 / 帮我领券 / 券要过期了吗 / 积分换什么值. Any asset-spending action requires explicit user confirmation before execution.
@@ -156,7 +156,20 @@ Skill（本文件，调用层）—— 定义职责与方法：做什么、按�
 
 **兜底**：订单长时间未支付会自动失效（详情里有 `expirePayTime` 支付截止）；用户反悔 → `cancel-order` 取消（必传取消原因码：1=改主意了、2=重复下单、3=点错/多/少、4=地址电话填错、5=送达时间选错、-1=其它；取消后跟用户确认"订单已取消"；已支付订单能否取消及退款流程以实测为准）；支付异常 → 引导去 App 订单页处理。
 
-## 职责四：算积分 🎰
+## 职责四：麦麦人格报告 🪪（传播担当）
+
+用户说"出报告 / 我的人格 / 麦麦人格报告"时，生成一份**可晒的个人报告**：
+
+1. 汇总画像与资产（订单统计 + 品类派系 + 时段属性 + 消费风格 + 积分）
+2. 判定人格称号（牛肉派·夜麦星人·随心配精算师这类，数据驱动人人不同）
+3. 输出两层：
+   - 对话内文本版（立即可看）
+   - **人格卡片图**：运行 `python3 scripts/mcd_mcp.py persona` 生成 SVG（零依赖），macOS 下自动转 PNG（~/.mcd-auntie/persona-card.png，750×1334 朋友圈尺寸），告诉用户文件位置、可直接发朋友圈
+4. 话术："你的人格是 XX——发朋友圈让人看看 TA 们的是什么派"
+
+人格是跟风传播的钩子：用户晒图 = 帮阿姨拉星。卡片上有仓库地址，看到的人扫一眼就来。
+
+## 职责五：算积分 🎰
 
 1. `query-my-account` — 可用积分
 2. `mall-points-products` — 积分商城（可按类目筛：商品券/实物/周边）
