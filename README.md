@@ -120,6 +120,7 @@ python3 scripts/mcd_mcp.py profile --save  # 上岗建档
 ## 技术说明
 
 - 业务数据全部来自**麦当劳官方 MCP Server**（除团餐/派对备用线外的全量工具编排，工具清单以实时 `tools/list` 为准，调用流程见 [`MCP_INTEGRATION.md`](./MCP_INTEGRATION.md)）
+- **数据边界**：订单数据覆盖麦当劳官方渠道（App/小程序点餐）；美团/饿了么等第三方平台的麦当劳订单不在 MCP 范围内——人格报告的统计口径即官方渠道订单
 - `SKILL.md` 同时兼容 WorkBuddy 技能包与 Claude Code skill 格式
 - 纯 Python 标准库，零依赖；无本地缓存，一切以麦当劳实时数据为准
 

@@ -95,7 +95,7 @@ def _extract_json(text):
 
 
 def cmd_profile(save=False):
-    """上岗建档:读历史订单(+详情),生成多维麦麦画像卡(数字员工的记忆)."""
+    """上岗建档: 全量订单(近一年)聚合统计 + 组件级深钻, 生成画像卡与画像库md."""
     from collections import Counter
 
     raw = call_tool("order-list")
@@ -103,98 +103,139 @@ def cmd_profile(save=False):
     if not obj:
         print("历史订单解析失败")
         return
-    orders = obj.get("data", {}).get("list") or obj.get("data", {}).get("orders") or []
+    import datetime as _dt
+    all_orders = obj.get("data", {}).get("list") or []
+    _year_ago = (_dt.date.today() - _dt.timedelta(days=365)).isoformat()
+    orders = [o for o in all_orders if str(o.get("createTime", ""))[:10] >= _year_ago] or all_orders
 
-    stores, dishes, scenes, amounts = Counter(), Counter(), Counter(), []
-    slots, categories, remarks, takeways = Counter(), Counter(), [], Counter()
-    combo_meals = []  # 每单的组件清单, 用于搭配习惯
-    for idx, o in enumerate(orders):
-        scene = "到店" if str(o.get("orderType")) == "1" else "外送"
-        scenes[scene] += 1
+    stores, dishes, scenes, slots, amounts = Counter(), Counter(), Counter(), Counter(), []
+    for o in orders:
+        scenes["到店" if str(o.get("orderType")) == "1" else "外送"] += 1
         stores[f"{o.get('storeName','?')}({o.get('storeCode','')})"] += 1
         try:
             amounts.append(float(o.get("realTotalAmount", 0)))
         except (TypeError, ValueError):
             pass
-        # 时段: 早餐 05:00-10:30
         try:
             hh = int(str(o.get("createTime", "12:00"))[11:13])
             slots["早餐" if 5 <= hh < 10.5 else ("午餐" if 11 <= hh < 14 else ("下午茶" if 14 <= hh < 17 else "晚餐"))] += 1
         except ValueError:
             pass
-        meal_parts = []
         for p in o.get("orderProductList", []):
-            name = p.get("productName", "?")
-            dishes[name] += p.get("quantity", 1)
-            parts = [name] + [c.get("name", "") for c in p.get("comboItemList", [])]
-            meal_parts.extend(parts)
-            joined = " ".join(parts)
-            if "鸡" in joined or "麦辣" in joined or "板烧" in joined:
-                categories["鸡肉"] += 1
-            if "牛" in joined or "安格斯" in joined or "巨无霸" in joined or "吉士" in joined:
-                categories["牛肉"] += 1
-            if "麦香鱼" in joined or "鱼" in joined:
-                categories["鱼肉"] += 1
-        combo_meals.append(meal_parts)
-        # 订单详情: 备注/取餐方式/餐具 (限流 600/min, 抽前几单足够)
-        if idx < 8:
-            detail = _extract_json(call_tool("query-order", {"orderId": o.get("orderId")}))
-            d = (detail or {}).get("data", {})
-            if d.get("remark"):
-                remarks.append(str(d["remark"]).strip())
-            if d.get("takeWay"):
-                takeways[str(d["takeWay"])] += 1
-
-    def drink_rate():
-        has_drink = sum(1 for parts in combo_meals if any(k in " ".join(parts) for k in ("咖", "可乐", "汽水", "拿铁", "麦旋风", "汁", "茶", "奶昔", "雪碧", "水")))
-        return has_drink
+            dishes[p.get("productName", "?")] += p.get("quantity", 1)
 
     n = len(orders)
     avg = sum(amounts) / len(amounts) if amounts else 0
-    drink_ratio = sum(1 for o in orders if any(
-        k in str(o.get("orderProductList", "")) for k in ("咖", "可乐", "汽水", "拿铁", "麦旋风", "茶", "奶昔", "雪碧", "汁")))
-    # 隐私原则: 卡片不含门店位置/均单金额——用户敢晒才会晒
-    L = []
-    L.append("=" * 46)
-    L.append("    麦麦画像卡 · 麦麦阿姨上岗建档")
-    L.append("=" * 46)
-    L.append(f"\n📜 分析了 {n} 笔历史订单\n")
-    L.append("🏠 常用门店(按频次):")
-    for s, c in stores.most_common(3):
-        L.append(f"   {c}次  {s}")
-    L.append("\n🚶 场景习惯:")
-    for s, c in scenes.most_common():
-        L.append(f"   {s} {c}/{n} ({c * 100 // n}%)")
+    dd = _deep_dive(orders)
+
+    # ---- 铁律习惯 vs 可变位: 频次悬殊=确定性 ----
+    def _iron(counter):
+        """频次>=3 且 >= 第二名1.5倍 → 铁律项(不变的习惯)."""
+        if not counter:
+            return None
+        (top, c1), (_, c2) = counter.most_common(1)[0], (counter.most_common(2) + [("", 0)])[1]
+        return (top, c1) if c1 >= 3 and c1 >= 1.5 * c2 else None
+
+    irons, varies = [], []
+    for dim_name, counter in (("主食", dd["burger"]), ("饮品位", dd["drink_slot"]),
+                               ("小食位", dd["side_slot"]), ("招牌组合", dd["combo_pair"])):
+        hit = _iron(counter)
+        if hit:
+            irons.append((dim_name, hit[0], hit[1]))
+        elif counter:
+            varies.append((dim_name, ", ".join(f"{k}×{v}" for k, v in counter.most_common(2))))
+
+    # ---- 推荐规则: 深钻结果翻译成阿姨的下单指令 ----
+    rules = []
+    if irons:
+        rules.append("铁律(直接当默认,不问): " + "; ".join(f"{d}={t}" for d, t, _ in irons))
+    if varies:
+        rules.append("可变位(给新意思): " + "; ".join(f"{d}({v})" for d, v in varies))
+    if dd["burger_total"]:
+        if dd["spicy"] == 0:
+            rules.append("辣度: 只推不辣款;辣品仅用户主动要")
+        elif dd["spicy"] >= dd["burger_total"] / 2:
+            rules.append("辣度: 可推辣款主力")
+        if dd["double_layer"] >= dd["burger_total"] * 0.6:
+            rules.append("结构: 默认推双层系")
+    if dd["drink_slot"]:
+        top_d = dd["drink_slot"].most_common(1)[0][0]
+        if "甜品位" not in top_d:
+            rules.append(f"饮品位: 默认 {top_d}")
+    if dd["order_shapes"]:
+        top_shape = dd["order_shapes"].most_common(1)[0][0]
+        if top_shape == "双套单":
+            rules.append("单型: 默认问'今天也是两份?'")
+        elif top_shape == "多人单":
+            rules.append("单型: 默认问'今天几位?'")
+    if dd["combo_pair"]:
+        rules.append(f"老样子默认单: {dd['combo_pair'].most_common(1)[0][0]}")
+        tried = set(dd["combo_pair"])
+        rules.append(f"新意思候选: 未解锁组合优先")
+
+    # ---- 打印画像卡 ----
+    L = ["=" * 46, "    麦麦画像卡 · 麦麦阿姨上岗建档", "=" * 46,
+         f"\n📜 近一年 {n} 笔订单\n"]
+    L.append("🏠 常用门店: " + ", ".join(f"{s} {c}次" for s, c in stores.most_common(2)))
+    L.append("🚶 场景: " + ", ".join(f"{k} {v}" for k, v in scenes.most_common()))
     if slots:
-        L.append("\n⏰ 时段习惯:")
-        for s, c in slots.most_common():
-            L.append(f"   {s} {c}次")
-    if categories:
-        L.append("\n🍔 品类偏好:")
-        for s, c in categories.most_common():
-            L.append(f"   {s}类 {c}次")
-    L.append(f"\n🥤 搭配习惯: {drink_rate()}/{n} 单含饮品")
-    L.append("\n🍜 口味偏好(点过什么):")
-    for d, c in dishes.most_common(5):
-        L.append(f"   {c}次  {d}")
-    if remarks:
-        L.append("\n📝 备注习惯(下单时主动继承):")
-        for r in dict.fromkeys(remarks):
-            L.append(f"   \"{r}\"")
-    if takeways:
-        L.append("\n🍽️ 取餐方式: " + ", ".join(f"{k} {v}次" for k, v in takeways.most_common()))
+        L.append("⏰ 时段: " + ", ".join(f"{k} {c}次" for k, c in slots.most_common()))
+    if dd["burger"]:
+        L.append("🍔 主食: " + "、".join(f"{b}×{c}" for b, c in dd["burger"].most_common(4)))
+        L.append(f"   结构 {dd['double_layer']}/{dd['burger_total']} 双层系 · " + ("不辣党" if dd["spicy"] == 0 else f"辣 {dd['spicy']} 次"))
+    if dd["drink_slot"]:
+        L.append("🥤 饮品位: " + "、".join(f"{k}×{v}" for k, v in dd["drink_slot"].most_common(3)))
+    if dd["side_slot"]:
+        L.append("🍟 小食位: " + "、".join(f"{k}×{v}" for k, v in dd["side_slot"].most_common(3)))
+    if dd["combo_pair"]:
+        L.append("🧩 招牌组合: " + "、".join(f"{p} ×{c}" for p, c in dd["combo_pair"].most_common(3)))
+    if dd["order_shapes"]:
+        L.append("👥 单型: " + "、".join(f"{k}×{v}" for k, v in dd["order_shapes"].most_common()))
     if amounts:
-        L.append(f"\n💰 消费带: 均单 ¥{avg:.1f}  最低 ¥{min(amounts):.0f}  最高 ¥{max(amounts):.0f}")
-        L.append("   ⚠️ 推荐红线: 不跨消费带推荐")
+        L.append(f"💰 消费带: 均单 ¥{avg:.1f}（{min(amounts):.0f}–{max(amounts):.0f}）⚠️ 不跨带推荐")
+    # 全菜单坐标系打点(实时拉取)
+    try:
+        cs = _menu_coordinate_system()
+        world, cs_iron, cs_rotate, cs_blank = _dot_on_system(cs, dd, dict(slots))
+        L.append(f"\n🗺️ 全菜单坐标(主世界:{world}, 实时{sum(len(v) for v in cs[world].values())}格)")
+        if cs_iron:
+            L.append("   铁律格: " + "、".join(f"{n}×{c}" for _, n, c in cs_iron[:4]))
+        L.append(f"   点过 {len(cs_iron) + len(cs_rotate)} 格 · 未探索 {len(cs_blank)} 格")
+        _explore = [f"{it['name']}" for sn, it in [(b[0], b[2]) for b in cs_blank[:0]]]  # 占位
+        # 探索建议按画像属性过滤: 不辣党不推辣品,双层党优先双层
+        _no_spicy = dd["spicy"] == 0 and dd["burger_total"] > 0
+        _prefer_double = dd["burger_total"] and dd["double_layer"] >= dd["burger_total"] * 0.6
+        def _explorable(it):
+            if _no_spicy and it.get("spicy"):
+                return False
+            return True
+        cand = [b[2] for b in cs_blank if b[0] == "主食" and _explorable(b[2])]
+        cand.sort(key=lambda it: (not (_prefer_double and it.get("layer") == "双层"),))
+        explore_names = [it["name"] for it in cand[:3]]
+        if explore_names:
+            L.append("   探索建议(空白主食): " + "、".join(explore_names))
+    except Exception as e:
+        L.append(f"\n🗺️ 坐标系拉取失败({e}),跳过")
+    if irons:
+        L.append("\n🔒 不变的习惯(铁律)")
+        for d, t, c in irons:
+            L.append(f"   {d}: {t} ×{c}")
+    if varies:
+        L.append("🔄 爱换的地方(给新意思)")
+        for d, v in varies:
+            L.append(f"   {d}: {v}")
+    if rules:
+        L.append("\n📌 阿姨推荐备忘(画像驱动)")
+        for r in rules:
+            L.append(f"   · {r}")
     L.append("\n" + "=" * 46)
-    L.append("确认无误后, 这就是阿姨的服务默认上下文")
     print("\n".join(L))
 
+    # ---- 保存画像库 md ----
     if save:
         home = os.path.expanduser("~/.mcd-auntie")
         os.makedirs(home, exist_ok=True)
         path = os.path.join(home, "profile.md")
-        # 保留旧的候选/稳定偏好区(用户数据不因刷新丢失)
         keep = ""
         if os.path.exists(path):
             old = open(path, encoding="utf-8").read()
@@ -203,32 +244,44 @@ def cmd_profile(save=False):
                 if i >= 0:
                     j = old.find("\n## ", i + 4)
                     keep += old[i:j if j > 0 else len(old)] + "\n\n"
-        today = __import__("datetime").date.today().isoformat()
+        today = _dt.date.today().isoformat()
+        fallback_pref = ("## 稳定偏好（已确认）\n- （暂无——确认后从候选区挪入）\n\n"
+                         "## 候选偏好（待印证：单次选择≠长期偏好）\n"
+                         '- （用户口述的偏好先落这里；重复出现或用户说「以后都」，经阿姨口头确认后挪入上方稳定区）\n\n')
+        pref_sections = keep or fallback_pref
         md = f"""# 麦麦阿姨的用户画像
 
 > 此文件是阿姨对用户的认知档案。用户可随时打开修改；阿姨改动前先说一声。
-> 最后刷新: {today}（{n} 笔订单分析）
+> 最后刷新: {today}（近一年 {n} 笔订单, 组件级深钻）
 
 ## 统计画像（订单派生，每次点餐后刷新替换）
-- 常用门店: {stores.most_common(1)[0][0]}（{stores.most_common(1)[0][1]}/{n} 次）
-- 场景: {", ".join(f"{k} {v}" for k, v in scenes.most_common())}
-- 时段: {", ".join(f"{k} {v}次" for k, v in slots.most_common())}
-- 品类: {", ".join(f"{k} {v}次" for k, v in categories.most_common())}
-- 搭配: 含饮品 {drink_rate()}/{n} 单
-- 取餐: {", ".join(f"{k} {v}次" for k, v in takeways.most_common())}
-- 消费带: 均单 ¥{avg:.1f}（{min(amounts):.0f}–{max(amounts):.0f}）← 推荐红线,不跨带推荐
+- 常用门店: {stores.most_common(1)[0][0] if stores else '—'}（{stores.most_common(1)[0][1] if stores else 0}/{n} 次）
+- 场景/时段: {", ".join(f"{k}{v}" for k, v in scenes.most_common())} · {", ".join(f"{k}{v}次" for k, v in slots.most_common())}
+- 消费带: 均单 ¥{avg:.1f}（{min(amounts):.0f}–{max(amounts):.0f}）← 推荐红线
 
-{keep}## 候选偏好（待印证：单次选择≠长期偏好）
-- （用户口述的偏好先落这里；重复出现或用户说"以后都"，经阿姨口头确认后挪入上方稳定区）
+## 深钻画像（组件级·每次点餐后刷新）
+- 主食: {"、".join(f"{b}×{c}" for b, c in dd['burger'].most_common(5)) or '—'}
+- 结构: 双层系 {dd['double_layer']}/{dd['burger_total']} · 辣度: {"不辣党" if dd['spicy'] == 0 else f"辣{dd['spicy']}次"}
+- 饮品位: {"、".join(f"{k}×{v}" for k, v in dd['drink_slot'].most_common(4)) or '—'}
+- 小食位: {"、".join(f"{k}×{v}" for k, v in dd['side_slot'].most_common(4)) or '—'}
+- 招牌组合: {"、".join(f"{p}×{c}" for p, c in dd['combo_pair'].most_common(3)) or '—'}
+- 单型: {"、".join(f"{k}×{v}" for k, v in dd['order_shapes'].most_common()) or '—'}
 
-## 变更记录
-- {today} 刷新统计画像（{n} 单）
+## 不变的习惯（铁律——推荐时直接当默认，不问）
+{chr(10).join(f"- {d}: {t} ×{c}" for d, t, c in irons) or "- （暂无足够订单判定）"}
+
+## 爱换的地方（可变——推荐时给新意思，别硬推重复的）
+{chr(10).join(f"- {d}: {v}" for d, v in varies) or "- （暂无）"}
+
+## 推荐规则（阿姨下单指令·画像驱动·推荐前必读）
+{chr(10).join('- ' + r for r in rules) or '- （订单不足,暂无规则）'}
+
+{pref_sections}## 变更记录
+- {today} 刷新画像（近一年 {n} 单, 组件级深钻 + 推荐规则）
 """
-        if "## 稳定偏好" not in md:
-            md = md.replace("## 候选偏好", "## 稳定偏好（已确认）\n- （暂无——确认后从候选区挪入）\n\n## 候选偏好")
         with open(path, "w", encoding="utf-8") as f:
             f.write(md)
-        print(f"\n💾 画像库已更新: {path} (用户数据,与技能包分离)")
+        print(f"\n💾 画像库已更新: {path}")
 
 def cmd_report():
     """资产体检:只串只读工具,输出麦麦资产负债表."""
@@ -286,8 +339,138 @@ def main():
 
 # ==================== 麦麦人格报告 ====================
 
-def _persona_title(p):
-    """从画像数据判定麦麦人格称号."""
+def _food_attrs(name):
+    """从餐品名推断属性: (位次, 肉类, 辣, 层数)."""
+    slot = "主食"
+    if any(k in name for k in ("咖", "可乐", "雪碧", "汽水", "拿铁", "茶", "汁", "美式", "摩卡")) \
+            and not any(k in name for k in ("鸡", "堡", "排")):
+        slot = "饮品"
+    elif any(k in name for k in ("新地", "麦旋风", "奶昔", "派")):
+        slot = "甜品"
+    elif not any(k in name for k in ("堡", "汉堡", "麦香鱼", "巨无霸")):
+        slot = "小食"
+    meat = ""
+    if any(k in name for k in ("鸡", "麦辣", "板烧")):
+        meat = "鸡肉"
+    elif any(k in name for k in ("牛", "吉士", "巨无霸", "安格斯")):
+        meat = "牛肉"
+    elif "鱼" in name:
+        meat = "鱼肉"
+    elif any(k in name for k in ("猪柳", "麦满分", "松饼", "蛋")):
+        meat = "猪肉蛋"
+    spicy = any(k in name for k in ("辣", "韩式", "麻辣"))
+    layer = "双层" if any(k in name for k in ("双层", "巨无霸", "不素之霸", "双牛")) else ("单层" if slot == "主食" else "")
+    return slot, meat, spicy, layer
+
+
+def _menu_coordinate_system(store_code="1950564"):
+    """双坐标系: 实时拉早餐+正餐全菜单, 输出属性标注的完整格子."""
+    import datetime as _dt
+    tomorrow = (_dt.date.today() + _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    menus = {}
+    for label, args in (("正餐", {"orderType": 1, "beType": 1, "storeCode": store_code,
+                                   "reservationDate": tomorrow + " 12:00"}),
+                        ("早餐", {"orderType": 1, "beType": 1, "storeCode": store_code,
+                                   "reservationDate": tomorrow + " 08:00"})):
+        obj = _extract_json(call_tool("query-meals", args)) or {}
+        data = obj.get("data", {})
+        meals = data.get("meals", {}) if isinstance(data.get("meals"), dict) else {}
+        menus[label] = meals
+    system = {}
+    for label, meals in menus.items():
+        slots = {"主食": [], "饮品": [], "甜品": [], "小食": []}
+        for code, d in (meals or {}).items():
+            nm = d.get("name") or code
+            if not nm or nm in ("韩式烟熏芝士风味酱", "日式鲜磨山葵酱"):
+                continue
+            slot, meat, spicy, layer = _food_attrs(nm)
+            slots[slot].append({"name": nm, "meat": meat, "spicy": spicy, "layer": layer,
+                                "price": d.get("currentPrice")})
+        system[label] = slots
+    return system
+
+
+def _deep_dive(orders):
+    """组件级深钻: 每一口食物打细粒度标签(结构/肉类/辣度/饮品位/小食位/组合/单型)."""
+    from collections import Counter
+    burger, drink_slot, side_slot, combo_pair = Counter(), Counter(), Counter(), Counter()
+    spicy_n = layer = 0
+    burger_total = 0
+    order_shapes = Counter()
+    for o in orders:
+        mains, pairs_of_order = [], []
+        n_items = 0
+        for p in o.get("orderProductList", []):
+            n_items += p.get("quantity", 1)
+            # 主品名(套餐容器或单品)
+            top = p.get("productName", "")
+            comps = [c.get("name", "") for c in p.get("comboItemList", [])]
+            all_names = ([top] if "随心配" not in top else []) + comps
+            for nm in all_names:
+                is_burger = any(k in nm for k in ("堡", "汉堡", "巨无霸", "麦香鱼")) and "麦满分" not in nm
+                if is_burger:
+                    burger_total += 1
+                    burger[nm] += 1
+                    if "辣" in nm:
+                        spicy_n += 1
+                    if "双层" in nm or "巨无霸" in nm or "双牛" in nm or "不素之霸" in nm:
+                        layer += 1
+                    mains.append(nm)
+                elif any(k in nm for k in ("咖", "可乐", "雪碧", "汽水", "拿铁", "茶", "汁", "美式", "摩卡")):
+                    drink_slot[nm] += 1
+                elif any(k in nm for k in ("新地", "麦旋风", "奶昔")):
+                    drink_slot[nm + "(甜品位)"] += 1
+                else:
+                    side_slot[nm] += 1
+            # 随心配组合对
+            if "随心配" in top and len(comps) == 2:
+                m = next((c for c in comps if any(k in c for k in ("堡", "汉堡"))), None)
+                oth = next((c for c in comps if c != m), None)
+                if m and oth:
+                    combo_pair[f"{m}+{oth}"] += 1
+                    pairs_of_order.append((m, oth))
+        # 单型: 1件=纯单人 / 2件=双套 / >=3件=多人
+        order_shapes["纯单人单" if n_items == 1 else ("双套单" if n_items == 2 else "多人单")] += 1
+    return {
+        "burger": burger, "burger_total": burger_total,
+        "spicy": spicy_n, "double_layer": layer,
+        "drink_slot": drink_slot, "side_slot": side_slot,
+        "combo_pair": combo_pair, "order_shapes": order_shapes,
+    }
+
+
+def _dot_on_system(cs, dd, slots_stat):
+    """个人订单在全菜单坐标系上打点: 主世界/铁律格/轮换格/空白探索格."""
+    # 主世界: 时段分布定坐标系
+    if not slots_stat:
+        world = "正餐"
+    else:
+        top = max(slots_stat, key=slots_stat.get)
+        world = "早餐" if top == "早餐" else "正餐"
+    sys_slots = cs.get(world, {})
+    # 打点: 点过的格子
+    eaten = {}
+    for counter in (dd["burger"], dd["drink_slot"], dd["side_slot"]):
+        for name, cnt in counter.items():
+            base = name.replace("(甜品位)", "")
+            eaten[base] = max(eaten.get(base, 0), cnt)
+    # 全量格子分类
+    iron, rotate, blank = [], [], []
+    for slot_name, items in sys_slots.items():
+        for it in items:
+            nm = it["name"]
+            hit = next((v for k, v in eaten.items() if k in nm or nm in k), 0)
+            if hit >= 3:
+                iron.append((slot_name, nm, hit))
+            elif hit > 0:
+                rotate.append((slot_name, nm, hit))
+            else:
+                blank.append((slot_name, nm, it))
+    return world, sorted(iron, key=lambda x: -x[2]), rotate, blank
+
+
+def _persona_title(p, dishes=None):
+    """从画像数据判定麦麦人格称号. dishes=单品频次表, 用于行为实锤."""
     cats = p.get("categories", {})
     slots = p.get("slots", {})
     avg = p.get("avgAmount", 0)
@@ -308,11 +491,15 @@ def _persona_title(p):
         period = {"早餐": "晨光麦客", "午餐": "正餐主力", "下午茶": "悠闲茶点派", "晚餐": "夜麦星人"}.get(top_slot, "随机干饭人")
     else:
         period = "随机干饭人"
-    # 消费风格
-    if avg < 20:
-        style = "随心配精算师"
+    # 消费风格: 行为实锤(点了什么)优先于金额推断(花了多少)
+    total_items = sum(dishes.values()) if dishes else 0
+    swxp = sum(c for name, c in (dishes or {}).items() if "随心配" in name)
+    if (avg < 20 or (total_items and swxp / total_items >= 0.4)) and swxp > 0:
+        style = "随心配精算师"      # 真点过随心配的省钱派(金额低或占比高皆实锤)
+    elif avg < 20:
+        style = "精打细算型"        # 每单都低但没点随心配,不硬蹭名字
     elif avg <= 40:
-        style = "均衡玩家"
+        style = "稳定发挥型"
     else:
         style = "全都要星人"
     # 取餐风格
@@ -331,14 +518,17 @@ def cmd_persona(save=False):
     raw = call_tool("order-list")
     obj = _extract_json(raw)
     all_orders = (obj or {}).get("data", {}).get("list") or []
-    # 周期: 默认统计今年;今年不足3单则用全部历史(生涯版)
+    # 口径: 主动统计近一年内订单(不依赖 App 窗口的被动描述)
     import datetime as _dt
-    this_year = _dt.date.today().year
-    year_orders = [o for o in all_orders if str(o.get("createTime", "")).startswith(str(this_year))]
-    period_label = f"{this_year} 年度"
-    orders = year_orders if len(year_orders) >= 3 else all_orders
-    if orders is all_orders and len(year_orders) < 3:
-        period_label = "麦麦生涯"
+    _year_ago = (_dt.date.today() - _dt.timedelta(days=365)).isoformat()
+    orders = [o for o in all_orders if str(o.get("createTime", ""))[:10] >= _year_ago] or all_orders
+    period_label = "我的麦生"
+    tenure = ""
+    dates = sorted(str(o.get("createTime", ""))[:10] for o in orders if o.get("createTime"))
+    if dates:
+        first = _dt.date.fromisoformat(dates[0])
+        months = (_dt.date.today() - first).days // 30
+        tenure = f"{months // 12} 年" if months >= 12 else f"{months} 个月"
     stores, dishes, slots, categories, amounts = Counter(), Counter(), Counter(), Counter(), []
     kcal_total = 0
     for o in orders:
@@ -365,10 +555,33 @@ def cmd_persona(save=False):
     avg = sum(amounts) / len(amounts) if amounts else 0
     drink_ratio = sum(1 for o in orders if any(
         k in str(o.get("orderProductList", "")) for k in ("咖", "可乐", "汽水", "拿铁", "麦旋风", "茶", "奶昔", "雪碧", "汁")))
+    # 饮品偏好: 组件级统计 + 派系
+    from collections import Counter as _C
+    _drinks = _C()
+    for o in orders:
+        for prod in o.get("orderProductList", []):
+            for c in prod.get("comboItemList", []):
+                nm = c.get("name", "")
+                if any(k in nm for k in ("咖", "可乐", "雪碧", "汽水", "拿铁", "麦旋风", "茶", "奶昔", "汁", "美式", "摩卡")):
+                    _drinks[nm] += c.get("quantity", 1)
+    if _drinks:
+        _dtop = _drinks.most_common(1)[0][0]
+        drink_name = _dtop if len(_dtop) <= 8 else _dtop[:7] + "…"
+        _dp = _drinks.most_common(1)[0][0]
+        if any(k in _dp for k in ("咖", "拿铁", "美式", "摩卡")):
+            drink_party = "咖啡党"
+        elif any(k in _dp for k in ("麦旋风", "奶昔")):
+            drink_party = "甜品派"
+        elif any(k in _dp for k in ("可乐", "雪碧", "汽水")):
+            drink_party = "快乐水派"
+        else:
+            drink_party = "茶饮派"
+    else:
+        drink_name, drink_party = "无饮品", "干饭纯粹派"
     # 隐私原则: 卡片不含门店位置/均单金额——用户敢晒才会晒
     p = {"categories": dict(categories), "slots": dict(slots), "avgAmount": avg,
          "takeWays": {}, "stores": {s: c for s, c in stores.most_common(3)}}
-    school, period, style, way = _persona_title(p)
+    school, period, style, way = _persona_title(p, dishes)
     top_store = stores.most_common(1)[0][0].replace("麦当劳北京", "").replace("餐厅", "") if stores else "—"
     top_dish = dishes.most_common(1)[0][0] if dishes else "—"
     # 资产侧
@@ -383,50 +596,31 @@ def cmd_persona(save=False):
     print(f"标签: {' / '.join(tags)}")
     print(f"周期: {period_label} | 统计: {n} 顿 · 最爱 {top_dish} · 均单 ¥{avg:.1f}")
     print(f"家底: 积分 {pts}")
+    slot_emoji = {"早餐": "☀️", "午餐": "🍔", "下午茶": "🍰", "晚餐": "🌙"}.get(max(slots, key=slots.get), "⏰") if slots else "⏰"
     # 生成卡片
-    import datetime
-    today = datetime.date.today().strftime("%Y.%m.%d")
     # 标签胶囊:居中横排,按数量自适应
     tag_w, tag_gap = 178, 18
     total_w = len(tags) * tag_w + (len(tags) - 1) * tag_gap
     start_x = (750 - total_w) / 2
     tag_html = "".join(
-        f'<rect x="{start_x + i * (tag_w + tag_gap):.0f}" y="712" width="{tag_w}" height="58" rx="29" fill="#FFC72C"/>'
+        f'<rect x="{start_x + i * (tag_w + tag_gap):.0f}" y="712" width="{tag_w}" height="58" rx="29" fill="#fdc82f"/>'
         f'<text x="{start_x + i * (tag_w + tag_gap) + tag_w / 2:.0f}" y="750" font-size="27" fill="#7A1E12" text-anchor="middle" font-weight="bold">{t}</text>'
         for i, t in enumerate(tags))
     dish_short = top_dish if len(top_dish) <= 12 else top_dish[:11] + "…"
     store_short = top_store if len(top_store) <= 12 else top_store[:11] + "…"
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
-  <rect width="750" height="1334" fill="#DA291C"/>
-  <rect y="0" width="750" height="10" fill="#FFC72C"/>
-  <text x="375" y="112" font-size="46" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="10">麦麦人格报告 · {period_label}</text>
-  <text x="375" y="158" font-size="21" fill="#FFD9B3" text-anchor="middle" letter-spacing="4">麦麦人格鉴定书 · AUNTIE M</text>
-
-  <g transform="translate(238,205) scale(0.725)">
-    <g transform="matrix(1.25,0,0,-1.25,-54.676498,382.42034)">
-      <path d="m 195.96681,182.84873 c 4.89851,36.22162 21.04635,101.55081 51.84302,101.55081 35.95328,0 78.19715,-120.77081 78.18691,-220.756855 l -33.15518,0 c 0,104.870215 -25.68677,199.361455 -44.16936,199.365555 -19.28002,0.002 -36.17675,-64.27427 -36.17675,-186.734386 l -33.11033,0 c 0,122.460116 -16.79431,186.734386 -36.17717,186.734386 -18.44899,0 -44.117119,-94.51296 -44.117119,-199.365555 l -33.154977,0 c 0.03113,100.072485 42.167876,220.769145 78.185886,220.756855 30.75386,-0.0102 46.90723,-65.321 51.84507,-101.55081" fill="#fdc82f"/>
-    </g>
-  </g>
-
-  <text x="375" y="552" font-size="74" fill="#FFFFFF" text-anchor="middle" font-weight="bold">{school}</text>
-  <text x="375" y="624" font-size="36" fill="#FFC72C" text-anchor="middle">{period} · {style}</text>
-
-  {tag_html}
-
-  <rect x="64" y="826" width="622" height="330" rx="28" fill="#FFFFFF"/>
-  <text x="110" y="898" font-size="27" fill="#DA291C" font-weight="bold">📋 我的麦麦档案</text>
-  <line x1="110" y1="918" x2="640" y2="918" stroke="#FFE3B3" stroke-width="2"/>
-  <g font-size="30" fill="#3A2418">
-    <text x="110" y="972">🍚 {period_label}吃了 <tspan font-weight="bold" fill="#DA291C">{n}</tspan> 顿麦当劳</text>
-    <text x="110" y="1024">🕐 出没时段：<tspan font-weight="bold" fill="#DA291C">{max(slots, key=slots.get) if slots else "神秘"}</tspan> 时刻</text>
-    <text x="110" y="1076">❤️ <tspan font-weight="bold" fill="#DA291C">{dish_short} × {dishes.most_common(1)[0][1] if dishes else 0}</tspan>{(" · " + ("铁粉认证" if dishes.most_common(1)[0][1] >= 5 else "真爱认证")) if dishes else ""}</text>
-    <text x="110" y="1128">🥤 搭配习惯：{drink_ratio}/{n} 单带饮品 · 积分 <tspan font-weight="bold" fill="#DA291C">{pts}</tspan></text>
-  </g>
-
-  <rect x="105" y="1218" width="540" height="74" rx="37" fill="#FFC72C"/>
-  <text x="375" y="1266" font-size="30" fill="#7A1E12" text-anchor="middle" font-weight="bold">你是什么派？测一测 →</text>
-  <text x="375" y="1322" font-size="19" fill="#FFD9B3" text-anchor="middle">github.com/shaocongzeming/auntie-m · 麦麦阿姨出品 · {today}</text>
-</svg>'''
+    cert = (" · " + ("铁粉认证" if dishes.most_common(1)[0][1] >= 5 else "真爱认证")) if dishes else ""
+    tpl_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "card-template.svg")
+    tpl = open(tpl_path, encoding="utf-8").read()
+    svg = (tpl.replace("{{PERIOD_LABEL}}", period_label).replace("{{SCHOOL}}", school)
+              .replace("{{PERIOD}}", period_label).replace("{{STYLE}}", style)
+              .replace("{{SLOT_EMOJI}}", slot_emoji).replace("{{N}}", str(n))
+              .replace("{{DISH}}", dish_short).replace("{{TENURE}}", tenure)
+              .replace("{{DISH_COUNT}}", str(dishes.most_common(1)[0][1] if dishes else 0))
+              .replace("{{SLOT}}", max(slots, key=slots.get) if slots else "神秘")
+              .replace("{{DRINK}}", str(drink_ratio)).replace("{{PTS}}", str(pts))
+              .replace("{{CERT}}", cert).replace("{{TAGS_SVG}}", tag_html)
+              .replace("{{DRINK_NAME}}", drink_name).replace("{{DRINK_PARTY}}", drink_party)
+              .replace("{{DRINK_TOP}}", str(_drinks.most_common(1)[0][1]) if _drinks else "0"))
     home = os.path.expanduser("~/.mcd-auntie")
     os.makedirs(home, exist_ok=True)
     svg_path = os.path.join(home, "persona-card.svg")
