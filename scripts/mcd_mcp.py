@@ -330,7 +330,15 @@ def cmd_persona(save=False):
     from collections import Counter
     raw = call_tool("order-list")
     obj = _extract_json(raw)
-    orders = (obj or {}).get("data", {}).get("list") or []
+    all_orders = (obj or {}).get("data", {}).get("list") or []
+    # 周期: 默认统计今年;今年不足3单则用全部历史(生涯版)
+    import datetime as _dt
+    this_year = _dt.date.today().year
+    year_orders = [o for o in all_orders if str(o.get("createTime", "")).startswith(str(this_year))]
+    period_label = f"{this_year} 年度"
+    orders = year_orders if len(year_orders) >= 3 else all_orders
+    if orders is all_orders and len(year_orders) < 3:
+        period_label = "麦麦生涯"
     stores, dishes, slots, categories, amounts = Counter(), Counter(), Counter(), Counter(), []
     kcal_total = 0
     for o in orders:
@@ -373,7 +381,7 @@ def cmd_persona(save=False):
     print("=" * 40)
     print(f"人格称号: {title}")
     print(f"标签: {' / '.join(tags)}")
-    print(f"统计: {n} 顿 · 常去 {top_store} · 最爱 {top_dish} · 均单 ¥{avg:.1f}")
+    print(f"周期: {period_label} | 统计: {n} 顿 · 最爱 {top_dish} · 均单 ¥{avg:.1f}")
     print(f"家底: 积分 {pts}")
     # 生成卡片
     import datetime
@@ -391,7 +399,7 @@ def cmd_persona(save=False):
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
   <rect width="750" height="1334" fill="#DA291C"/>
   <rect y="0" width="750" height="10" fill="#FFC72C"/>
-  <text x="375" y="112" font-size="46" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="10">麦麦人格报告</text>
+  <text x="375" y="112" font-size="46" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="10">麦麦人格报告 · {period_label}</text>
   <text x="375" y="158" font-size="21" fill="#FFD9B3" text-anchor="middle" letter-spacing="4">麦麦人格鉴定书 · AUNTIE M</text>
 
   <g transform="translate(238,205) scale(0.725)">
@@ -409,7 +417,7 @@ def cmd_persona(save=False):
   <text x="110" y="898" font-size="27" fill="#DA291C" font-weight="bold">📋 我的麦麦档案</text>
   <line x1="110" y1="918" x2="640" y2="918" stroke="#FFE3B3" stroke-width="2"/>
   <g font-size="30" fill="#3A2418">
-    <text x="110" y="972">🍚 今年吃了 <tspan font-weight="bold" fill="#DA291C">{n}</tspan> 顿麦当劳</text>
+    <text x="110" y="972">🍚 {period_label}吃了 <tspan font-weight="bold" fill="#DA291C">{n}</tspan> 顿麦当劳</text>
     <text x="110" y="1024">🕐 出没时段：<tspan font-weight="bold" fill="#DA291C">{max(slots, key=slots.get) if slots else "神秘"}</tspan> 时刻</text>
     <text x="110" y="1076">❤️ <tspan font-weight="bold" fill="#DA291C">{dish_short} × {dishes.most_common(1)[0][1] if dishes else 0}</tspan>{(" · " + ("铁粉认证" if dishes.most_common(1)[0][1] >= 5 else "真爱认证")) if dishes else ""}</text>
     <text x="110" y="1128">🥤 搭配习惯：{drink_ratio}/{n} 单带饮品 · 积分 <tspan font-weight="bold" fill="#DA291C">{pts}</tspan></text>
