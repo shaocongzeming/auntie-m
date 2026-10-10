@@ -11,6 +11,7 @@
     python3 mcd_mcp.py call query-meals '{"orderType":1}'
     python3 mcd_mcp.py report                  # 一键资产体检(只读,不动资产)
     python3 mcd_mcp.py profile [--save]        # 生成麦麦画像卡(--save 存为记忆文件)
+    python3 mcd_mcp.py persona                 # 麦麦人格报告(生成可传播的人格卡片)
 """
 
 import json
@@ -272,8 +273,144 @@ def main():
         cmd_report()
     elif cmd == "profile":
         cmd_profile(save="--save" in params)
+    elif cmd == "persona":
+        cmd_persona()
     else:
         print(__doc__)
+
+
+
+
+# ==================== 麦麦人格报告 ====================
+
+def _persona_title(p):
+    """从画像数据判定麦麦人格称号."""
+    cats = p.get("categories", {})
+    slots = p.get("slots", {})
+    avg = p.get("avgAmount", 0)
+    tw = p.get("takeWays", {})
+    # 品类派系
+    if cats:
+        top_cat = max(cats, key=cats.get)
+        total = sum(cats.values())
+        if cats[top_cat] / max(total, 1) < 0.45:
+            school = "杂食均衡派"
+        else:
+            school = {"牛肉": "牛肉派", "鸡肉": "鸡肉派", "鱼肉": "鱼肉派"}.get(top_cat, "百味通吃派")
+    else:
+        school = "神秘食客"
+    # 时段属性
+    if slots:
+        top_slot = max(slots, key=slots.get)
+        period = {"早餐": "晨光麦客", "午餐": "正餐主力", "下午茶": "悠闲茶点派", "晚餐": "夜麦星人"}.get(top_slot, "随机干饭人")
+    else:
+        period = "随机干饭人"
+    # 消费风格
+    if avg < 20:
+        style = "随心配精算师"
+    elif avg <= 40:
+        style = "均衡玩家"
+    else:
+        style = "全都要星人"
+    # 取餐风格
+    if tw:
+        top_tw = max(tw, key=tw.get)
+        way = {"外带": "打包大师", "堂食": "堂食氛围组", "外送": "宅家干饭人"}.get(top_tw, "")
+    else:
+        way = ""
+    return school, period, style, way
+
+
+def cmd_persona(save=False):
+    """麦麦人格报告:汇总画像与资产,生成可传播的人格卡片(SVG/PNG)."""
+    import subprocess
+    from collections import Counter
+    raw = call_tool("order-list")
+    obj = _extract_json(raw)
+    orders = (obj or {}).get("data", {}).get("list") or []
+    stores, dishes, slots, categories, amounts = Counter(), Counter(), Counter(), Counter(), []
+    kcal_total = 0
+    for o in orders:
+        stores[o.get("storeName", "?")] += 1
+        try:
+            amounts.append(float(o.get("realTotalAmount", 0)))
+        except (TypeError, ValueError):
+            pass
+        try:
+            hh = int(str(o.get("createTime", "12:00"))[11:13])
+            slots["早餐" if 5 <= hh < 10.5 else ("午餐" if 11 <= hh < 14 else ("下午茶" if 14 <= hh < 17 else "晚餐"))] += 1
+        except ValueError:
+            pass
+        joined_parts = []
+        for prod in o.get("orderProductList", []):
+            dishes[prod.get("productName", "?")] += prod.get("quantity", 1)
+            parts = [prod.get("productName", "")] + [c.get("name", "") for c in prod.get("comboItemList", [])]
+            joined_parts.extend(parts)
+        joined = " ".join(joined_parts)
+        for key, kw in (("牛肉", ("牛", "安格斯", "巨无霸", "吉士")), ("鸡肉", ("鸡", "麦辣", "板烧")), ("鱼肉", ("麦香鱼", "鱼"))):
+            if any(k in joined for k in kw):
+                categories[key] += 1
+    n = len(orders)
+    avg = sum(amounts) / len(amounts) if amounts else 0
+    p = {"categories": dict(categories), "slots": dict(slots), "avgAmount": avg,
+         "takeWays": {}, "stores": {s: c for s, c in stores.most_common(3)}}
+    school, period, style, way = _persona_title(p)
+    top_store = stores.most_common(1)[0][0].replace("麦当劳北京", "").replace("餐厅", "") if stores else "—"
+    top_dish = dishes.most_common(1)[0][0] if dishes else "—"
+    # 资产侧
+    acct = _extract_json(call_tool("query-my-account")) or {}
+    pts = ((acct.get("data") or {}).get("availablePoint")) or "?"
+    title = f"{school} · {period}"
+    tags = [t for t in (school, period, style, way) if t][:3]
+    print("=" * 40)
+    print("      麦麦人格报告 · Auntie M")
+    print("=" * 40)
+    print(f"人格称号: {title}")
+    print(f"标签: {' / '.join(tags)}")
+    print(f"统计: {n} 顿 · 常去 {top_store} · 最爱 {top_dish} · 均单 ¥{avg:.1f}")
+    print(f"家底: 积分 {pts}")
+    # 生成卡片
+    import datetime
+    today = datetime.date.today().strftime("%Y.%m.%d")
+    tag_html = "".join(
+        f'<rect x="{280 + i*150}" y="528" width="136" height="52" rx="26" fill="#FFF3D6"/>'
+        f'<text x="{348 + i*150}" y="562" font-size="26" fill="#8B4513" text-anchor="middle" font-weight="bold">{t}</text>'
+        for i, t in enumerate(tags))
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
+  <rect width="750" height="1334" fill="#DA291C"/>
+  <rect y="0" width="750" height="8" fill="#FFC72C"/>
+  <text x="375" y="150" font-size="44" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="8">麦麦人格报告</text>
+  <text x="375" y="200" font-size="22" fill="#FFD9B3" text-anchor="middle">AUNTIE M · 她比你自己更懂你</text>
+  <circle cx="375" cy="360" r="105" fill="#FFC72C"/>
+  <text x="375" y="405" font-size="110" text-anchor="middle">🍔</text>
+  <text x="375" y="600" font-size="58" fill="#FFFFFF" text-anchor="middle" font-weight="bold">{school}</text>
+  <text x="375" y="668" font-size="40" fill="#FFC72C" text-anchor="middle">{period} · {style}</text>
+  {tag_html}
+  <g font-size="30" fill="#FFFFFF" text-anchor="middle" font-weight="bold">
+    <text x="187" y="790">🍚 {n} 顿</text><text x="375" y="790">📍 {top_store[:8]}</text><text x="563" y="790">❤️ {top_dish[:8]}</text>
+  </g>
+  <rect x="60" y="850" width="630" height="280" rx="24" fill="#B01E14"/>
+  <g font-size="27" fill="#FFE8CC">
+    <text x="100" y="915">· 常去门店：{top_store[:14]}</text>
+    <text x="100" y="970">· 最爱单品：{top_dish[:14]} × {dishes.most_common(1)[0][1] if dishes else 0} 次</text>
+    <text x="100" y="1025">· 平均客单：¥{avg:.1f}</text>
+    <text x="100" y="1080">· 麦麦积分：{pts} 分</text>
+  </g>
+  <text x="375" y="1210" font-size="30" fill="#FFFFFF" text-anchor="middle">出自数字员工「麦麦阿姨」之手</text>
+  <text x="375" y="1258" font-size="22" fill="#FFD9B3" text-anchor="middle">github.com/shaocongzeming/auntie-m · {today}</text>
+</svg>'''
+    home = os.path.expanduser("~/.mcd-auntie")
+    os.makedirs(home, exist_ok=True)
+    svg_path = os.path.join(home, "persona-card.svg")
+    open(svg_path, "w", encoding="utf-8").write(svg)
+    print(f"\n🖼️ 卡片(SVG): {svg_path} — 浏览器打开即是图")
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        print("(检测到 Pillow,可进一步转 PNG)")
+    except ImportError:
+        pass
+    if save:
+        print("生成完毕,发朋友圈用 SVG 打开截图即可")
 
 
 if __name__ == "__main__":
