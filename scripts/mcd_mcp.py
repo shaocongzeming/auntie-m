@@ -151,6 +151,9 @@ def cmd_profile(save=False):
 
     n = len(orders)
     avg = sum(amounts) / len(amounts) if amounts else 0
+    drink_ratio = sum(1 for o in orders if any(
+        k in str(o.get("orderProductList", "")) for k in ("咖", "可乐", "汽水", "拿铁", "麦旋风", "茶", "奶昔", "雪碧", "汁")))
+    # 隐私原则: 卡片不含门店位置/均单金额——用户敢晒才会晒
     L = []
     L.append("=" * 46)
     L.append("    麦麦画像卡 · 麦麦阿姨上岗建档")
@@ -352,6 +355,9 @@ def cmd_persona(save=False):
                 categories[key] += 1
     n = len(orders)
     avg = sum(amounts) / len(amounts) if amounts else 0
+    drink_ratio = sum(1 for o in orders if any(
+        k in str(o.get("orderProductList", "")) for k in ("咖", "可乐", "汽水", "拿铁", "麦旋风", "茶", "奶昔", "雪碧", "汁")))
+    # 隐私原则: 卡片不含门店位置/均单金额——用户敢晒才会晒
     p = {"categories": dict(categories), "slots": dict(slots), "avgAmount": avg,
          "takeWays": {}, "stores": {s: c for s, c in stores.most_common(3)}}
     school, period, style, way = _persona_title(p)
@@ -372,45 +378,73 @@ def cmd_persona(save=False):
     # 生成卡片
     import datetime
     today = datetime.date.today().strftime("%Y.%m.%d")
+    # 标签胶囊:居中横排,按数量自适应
+    tag_w, tag_gap = 178, 18
+    total_w = len(tags) * tag_w + (len(tags) - 1) * tag_gap
+    start_x = (750 - total_w) / 2
     tag_html = "".join(
-        f'<rect x="{280 + i*150}" y="528" width="136" height="52" rx="26" fill="#FFF3D6"/>'
-        f'<text x="{348 + i*150}" y="562" font-size="26" fill="#8B4513" text-anchor="middle" font-weight="bold">{t}</text>'
+        f'<rect x="{start_x + i * (tag_w + tag_gap):.0f}" y="712" width="{tag_w}" height="58" rx="29" fill="#FFC72C"/>'
+        f'<text x="{start_x + i * (tag_w + tag_gap) + tag_w / 2:.0f}" y="750" font-size="27" fill="#7A1E12" text-anchor="middle" font-weight="bold">{t}</text>'
         for i, t in enumerate(tags))
+    dish_short = top_dish if len(top_dish) <= 12 else top_dish[:11] + "…"
+    store_short = top_store if len(top_store) <= 12 else top_store[:11] + "…"
     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="750" height="1334" viewBox="0 0 750 1334">
   <rect width="750" height="1334" fill="#DA291C"/>
-  <rect y="0" width="750" height="8" fill="#FFC72C"/>
-  <text x="375" y="150" font-size="44" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="8">麦麦人格报告</text>
-  <text x="375" y="200" font-size="22" fill="#FFD9B3" text-anchor="middle">AUNTIE M · 她比你自己更懂你</text>
-  <circle cx="375" cy="360" r="105" fill="#FFC72C"/>
-  <text x="375" y="405" font-size="110" text-anchor="middle">🍔</text>
-  <text x="375" y="600" font-size="58" fill="#FFFFFF" text-anchor="middle" font-weight="bold">{school}</text>
-  <text x="375" y="668" font-size="40" fill="#FFC72C" text-anchor="middle">{period} · {style}</text>
+  <rect y="0" width="750" height="10" fill="#FFC72C"/>
+  <text x="375" y="112" font-size="46" fill="#FFC72C" text-anchor="middle" font-weight="bold" letter-spacing="10">麦麦人格报告</text>
+  <text x="375" y="158" font-size="21" fill="#FFD9B3" text-anchor="middle" letter-spacing="4">麦麦人格鉴定书 · AUNTIE M</text>
+
+  <g transform="translate(238,205) scale(0.725)">
+    <g transform="matrix(1.25,0,0,-1.25,-54.676498,382.42034)">
+      <path d="m 195.96681,182.84873 c 4.89851,36.22162 21.04635,101.55081 51.84302,101.55081 35.95328,0 78.19715,-120.77081 78.18691,-220.756855 l -33.15518,0 c 0,104.870215 -25.68677,199.361455 -44.16936,199.365555 -19.28002,0.002 -36.17675,-64.27427 -36.17675,-186.734386 l -33.11033,0 c 0,122.460116 -16.79431,186.734386 -36.17717,186.734386 -18.44899,0 -44.117119,-94.51296 -44.117119,-199.365555 l -33.154977,0 c 0.03113,100.072485 42.167876,220.769145 78.185886,220.756855 30.75386,-0.0102 46.90723,-65.321 51.84507,-101.55081" fill="#fdc82f"/>
+    </g>
+  </g>
+
+  <text x="375" y="552" font-size="74" fill="#FFFFFF" text-anchor="middle" font-weight="bold">{school}</text>
+  <text x="375" y="624" font-size="36" fill="#FFC72C" text-anchor="middle">{period} · {style}</text>
+
   {tag_html}
-  <g font-size="30" fill="#FFFFFF" text-anchor="middle" font-weight="bold">
-    <text x="187" y="790">🍚 {n} 顿</text><text x="375" y="790">📍 {top_store[:8]}</text><text x="563" y="790">❤️ {top_dish[:8]}</text>
+
+  <rect x="64" y="826" width="622" height="330" rx="28" fill="#FFFFFF"/>
+  <text x="110" y="898" font-size="27" fill="#DA291C" font-weight="bold">📋 我的麦麦档案</text>
+  <line x1="110" y1="918" x2="640" y2="918" stroke="#FFE3B3" stroke-width="2"/>
+  <g font-size="30" fill="#3A2418">
+    <text x="110" y="972">🍚 今年吃了 <tspan font-weight="bold" fill="#DA291C">{n}</tspan> 顿麦当劳</text>
+    <text x="110" y="1024">🕐 出没时段：<tspan font-weight="bold" fill="#DA291C">{max(slots, key=slots.get) if slots else "神秘"}</tspan> 时刻</text>
+    <text x="110" y="1076">❤️ <tspan font-weight="bold" fill="#DA291C">{dish_short} × {dishes.most_common(1)[0][1] if dishes else 0}</tspan>{(" · " + ("铁粉认证" if dishes.most_common(1)[0][1] >= 5 else "真爱认证")) if dishes else ""}</text>
+    <text x="110" y="1128">🥤 搭配习惯：{drink_ratio}/{n} 单带饮品 · 积分 <tspan font-weight="bold" fill="#DA291C">{pts}</tspan></text>
   </g>
-  <rect x="60" y="850" width="630" height="280" rx="24" fill="#B01E14"/>
-  <g font-size="27" fill="#FFE8CC">
-    <text x="100" y="915">· 常去门店：{top_store[:14]}</text>
-    <text x="100" y="970">· 最爱单品：{top_dish[:14]} × {dishes.most_common(1)[0][1] if dishes else 0} 次</text>
-    <text x="100" y="1025">· 平均客单：¥{avg:.1f}</text>
-    <text x="100" y="1080">· 麦麦积分：{pts} 分</text>
-  </g>
-  <text x="375" y="1210" font-size="30" fill="#FFFFFF" text-anchor="middle">出自数字员工「麦麦阿姨」之手</text>
-  <text x="375" y="1258" font-size="22" fill="#FFD9B3" text-anchor="middle">github.com/shaocongzeming/auntie-m · {today}</text>
+
+  <rect x="105" y="1218" width="540" height="74" rx="37" fill="#FFC72C"/>
+  <text x="375" y="1266" font-size="30" fill="#7A1E12" text-anchor="middle" font-weight="bold">你是什么派？测一测 →</text>
+  <text x="375" y="1322" font-size="19" fill="#FFD9B3" text-anchor="middle">github.com/shaocongzeming/auntie-m · 麦麦阿姨出品 · {today}</text>
 </svg>'''
     home = os.path.expanduser("~/.mcd-auntie")
     os.makedirs(home, exist_ok=True)
     svg_path = os.path.join(home, "persona-card.svg")
     open(svg_path, "w", encoding="utf-8").write(svg)
-    print(f"\n🖼️ 卡片(SVG): {svg_path} — 浏览器打开即是图")
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        print("(检测到 Pillow,可进一步转 PNG)")
-    except ImportError:
-        pass
-    if save:
-        print("生成完毕,发朋友圈用 SVG 打开截图即可")
+    print(f"\n🖼️ 卡片(SVG): {svg_path}")
+    # PNG 渲染: 优先 Chrome 无头(彩色emoji/字体完整), 失败则 qlmanage 兜底
+    png_path = os.path.join(home, "persona-card.png")
+    html = ('<!doctype html><html><head><meta charset="utf-8"><style>'
+            '*{margin:0;padding:0}html,body{width:750px;height:1334px;overflow:hidden}'
+            'img{display:block;width:750px;height:1334px}</style></head>'
+            '<body><img src="persona-card.svg"></body></html>')
+    open(os.path.join(home, "card.html"), "w", encoding="utf-8").write(html)
+    import subprocess, shutil
+    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    if shutil.which("google-chrome") or os.path.exists(chrome):
+        exe = shutil.which("google-chrome") or chrome
+        subprocess.run([exe, "--headless", "--disable-gpu", "--hide-scrollbars",
+                        "--force-device-scale-factor=1", "--screenshot=" + png_path,
+                        "--window-size=750,1334", "file://" + os.path.join(home, "card.html")],
+                       capture_output=True, timeout=60)
+        if os.path.exists(png_path) and os.path.getsize(png_path) > 30000:
+            print(f"📱 朋友圈图(PNG): {png_path} — 直接可发")
+        else:
+            print("PNG 渲染未成功,请用浏览器打开 SVG 截图")
+    else:
+        print("未找到 Chrome,请用浏览器打开 SVG 截图")
 
 
 if __name__ == "__main__":
