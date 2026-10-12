@@ -108,6 +108,17 @@ python3 scripts/mcd_mcp.py report          # 盘家底(只读)
 python3 scripts/mcd_mcp.py profile --save  # 上岗建档
 ```
 
+Windows PowerShell 使用 Python 3 启动器：
+
+```powershell
+$env:MCD_MCP_TOKEN = "你的token"
+py -3 scripts/mcd_mcp.py report
+py -3 scripts/mcd_mcp.py profile --save
+py -3 scripts/mcd_mcp.py persona
+```
+
+Token 只填在自己的电脑上。若没有 `py` 命令，请先安装 Python 3；人格卡 PNG 需要安装 Chrome，脚本会查找当前用户和系统的标准安装路径。
+
 ## 使用方式（两种）
 
 **1. 主动召唤**——想吃了就说一声：
