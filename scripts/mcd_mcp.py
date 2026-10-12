@@ -18,6 +18,49 @@ import json
 import os
 import sys
 import urllib.request
+from pathlib import Path
+
+
+def find_chrome_executable():
+    """Find Chrome on PATH or in a standard desktop installation."""
+    import shutil
+    for name in ("google-chrome", "chrome", "chromium", "chromium-browser"):
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    if sys.platform == "win32":
+        candidates = [os.path.join(os.environ[key], "Google", "Chrome", "Application", "chrome.exe")
+                      for key in ("LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")
+                      if os.environ.get(key)]
+    elif sys.platform == "darwin":
+        candidates = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+    else:
+        candidates = []
+    return next((path for path in candidates if os.path.isfile(path)), None)
+
+
+def render_persona_png(home):
+    """Publish only a successful fresh render; preserve an older card on failure."""
+    import subprocess
+    import tempfile
+    executable = find_chrome_executable()
+    if not executable:
+        return False
+    home = Path(home)
+    try:
+        with tempfile.TemporaryDirectory(prefix="persona-render-", dir=home) as scratch:
+            screenshot = Path(scratch) / "card.png"
+            result = subprocess.run(
+                [executable, "--headless", "--disable-gpu", "--hide-scrollbars",
+                 "--force-device-scale-factor=1", "--screenshot=" + str(screenshot),
+                 "--window-size=750,1334", (home / "card.html").resolve().as_uri()],
+                capture_output=True, timeout=60)
+            if result.returncode != 0 or not screenshot.is_file() or screenshot.stat().st_size <= 30000:
+                return False
+            os.replace(screenshot, home / "persona-card.png")
+            return True
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 MCP_URL = "https://mcp.mcd.cn"
 REQ_ID = 100
@@ -633,20 +676,10 @@ def cmd_persona(save=False):
             'img{display:block;width:750px;height:1334px}</style></head>'
             '<body><img src="persona-card.svg"></body></html>')
     open(os.path.join(home, "card.html"), "w", encoding="utf-8").write(html)
-    import subprocess, shutil
-    chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    if shutil.which("google-chrome") or os.path.exists(chrome):
-        exe = shutil.which("google-chrome") or chrome
-        subprocess.run([exe, "--headless", "--disable-gpu", "--hide-scrollbars",
-                        "--force-device-scale-factor=1", "--screenshot=" + png_path,
-                        "--window-size=750,1334", "file://" + os.path.join(home, "card.html")],
-                       capture_output=True, timeout=60)
-        if os.path.exists(png_path) and os.path.getsize(png_path) > 30000:
-            print(f"📱 朋友圈图(PNG): {png_path} — 直接可发")
-        else:
-            print("PNG 渲染未成功,请用浏览器打开 SVG 截图")
+    if render_persona_png(home):
+        print(f"📱 朋友圈图(PNG): {png_path} — 直接可发")
     else:
-        print("未找到 Chrome,请用浏览器打开 SVG 截图")
+        print("本次 PNG 未生成，请确认已安装 Chrome，或用浏览器打开 SVG 截图")
 
 
 if __name__ == "__main__":
