@@ -3,3 +3,9 @@
 __pycache__/
 mcbutler_profile.json
 麦当劳程序员创意开发大赛-增强版.md
+.env
+.env.*
+!.env.example
+*.log
+assets/hero-persona-card.png
+.mcd-auntie/
